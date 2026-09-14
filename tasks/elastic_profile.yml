@@ -1,6 +1,21 @@
 ---
 # Tasks to configure Elastic Defend EDR profile for LitterBox
 
+- name: Generate Elasticsearch API key automatically
+  ansible.builtin.include_tasks: elastic_apikey.yml
+  when:
+    - ludus_litterbox_elastic_auto_apikey | default(true)
+    - ludus_litterbox_elastic_apikey | length == 0
+
+- name: Validate Elasticsearch API key is available
+  ansible.builtin.assert:
+    that:
+      - ludus_litterbox_elastic_apikey | length > 0
+    fail_msg: >-
+      No Elasticsearch API key available. Either set ludus_litterbox_elastic_apikey manually,
+      or provide ludus_litterbox_elastic_username and ludus_litterbox_elastic_password
+      for automatic key generation.
+
 - name: Create EDR profiles directory
   ansible.windows.win_file:
     path: "{{ ludus_litterbox_install_dir }}\\LitterBox\\Config\\edr_profiles"

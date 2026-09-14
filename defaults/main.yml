@@ -94,7 +94,10 @@ ludus_litterbox_elastic_enabled: false
 ludus_litterbox_elastic_agent_ip: ""          # IP of the Windows VM running the Whiskers agent
 ludus_litterbox_elastic_agent_port: 8080      # Whiskers agent port
 ludus_litterbox_elastic_url: ""               # Elasticsearch host:port (e.g. 10.0.0.5:9200)
-ludus_litterbox_elastic_apikey: ""            # Base64-encoded API key from Kibana (Stack Management -> API keys)
+ludus_litterbox_elastic_apikey: ""            # Base64-encoded API key — leave empty for auto-generation
+ludus_litterbox_elastic_auto_apikey: false    # Auto-generate API key via Elasticsearch API when apikey is empty
+ludus_litterbox_elastic_username: "elastic"   # Elasticsearch user for API key creation (needs manage_api_key privilege)
+ludus_litterbox_elastic_password: ""          # Elasticsearch password (use ansible-vault or ludus secrets)
 ludus_litterbox_elastic_verify_tls: false     # Set true if Elasticsearch uses a trusted certificate
 ludus_litterbox_elastic_wait_alerts: 90       # Seconds to wait for alerts after execution
 ludus_litterbox_elastic_av_block_wait: 60     # Seconds to wait for AV block verdicts

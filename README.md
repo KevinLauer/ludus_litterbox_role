@@ -151,10 +151,47 @@ LitterBox supports [Elastic Defend](https://github.com/BlackSnufkin/LitterBox/wi
 - Elastic Stack running and accessible
 - Elastic Agent with Elastic Defend enrolled on the EDR Windows VM
 - Detection Engine rules enabled in Kibana (Security -> Manage -> Rules)
-- An Elasticsearch API key (see below)
 - Whiskers agent deployed on the EDR VM and whitelisted in Defend's Trusted Applications
 
-### Creating the Elasticsearch API Key
+### Elasticsearch API Key
+
+The role can **automatically generate** a scoped, read-only API key via the Elasticsearch `_security/api_key` REST API. This is the default behavior — just provide Elasticsearch credentials and leave `ludus_litterbox_elastic_apikey` empty.
+
+**Automatic generation** (recommended):
+
+```yaml
+  vars:
+    ludus_litterbox_elastic_enabled: true
+    ludus_litterbox_elastic_agent_ip: "10.x.x.x"      # EDR VM running Whiskers
+    ludus_litterbox_elastic_agent_port: 8080
+    ludus_litterbox_elastic_url: "10.x.x.x:9200"      # Elasticsearch host:port
+    ludus_litterbox_elastic_username: "elastic"         # User with manage_api_key privilege
+    ludus_litterbox_elastic_password: "changeme"        # Use ansible-vault or ludus secrets
+    ludus_litterbox_elastic_verify_tls: false
+```
+
+The generated key is scoped to read-only access on:
+- `.alerts-security.alerts-*` — Detection Engine rule signals
+- `.internal.alerts-security.alerts-*` — internal alert indices
+- `.ds-logs-endpoint.alerts-*` — Elastic Defend endpoint alerts
+
+Each key is uniquely named per target host (e.g. `litterbox-ws01-1726300800`).
+
+> **Tip:** Store the Elasticsearch password securely using `ansible-vault encrypt_string` or Ludus secrets rather than plain text in your config.
+
+**Manual key** (set `ludus_litterbox_elastic_auto_apikey: false` or provide a key directly):
+
+```yaml
+  vars:
+    ludus_litterbox_elastic_enabled: true
+    ludus_litterbox_elastic_agent_ip: "10.x.x.x"
+    ludus_litterbox_elastic_url: "10.x.x.x:9200"
+    ludus_litterbox_elastic_apikey: "<base64-key>"     # Pre-created API key
+    ludus_litterbox_elastic_auto_apikey: false
+```
+
+<details>
+<summary>Creating a manual API key in Kibana</summary>
 
 1. Open Kibana (e.g. `https://<elastic-ip>:5601`)
 2. Navigate to **Stack Management** -> **API keys** (under Security)
@@ -183,19 +220,7 @@ LitterBox supports [Elastic Defend](https://github.com/BlackSnufkin/LitterBox/wi
 6. Click **Create API key**
 7. Copy the **Encoded** value — this is the base64 string to use as `ludus_litterbox_elastic_apikey`
 
-> **Note:** The first two indices capture Detection Engine rule signals, the third captures Elastic Defend host-level endpoint alerts. Both are needed for LitterBox to get the full alert picture.
-
-### Enable Elastic Defend
-
-```yaml
-  vars:
-    ludus_litterbox_elastic_enabled: true
-    ludus_litterbox_elastic_agent_ip: "10.x.x.x"      # EDR VM running Whiskers
-    ludus_litterbox_elastic_agent_port: 8080
-    ludus_litterbox_elastic_url: "10.x.x.x:9200"      # Elasticsearch host:port
-    ludus_litterbox_elastic_apikey: "<base64-key>"     # API key from Kibana
-    ludus_litterbox_elastic_verify_tls: false
-```
+</details>
 
 ### Elastic Defend Variables
 
@@ -205,7 +230,10 @@ LitterBox supports [Elastic Defend](https://github.com/BlackSnufkin/LitterBox/wi
 | `ludus_litterbox_elastic_agent_ip` | `""` | IP of the EDR VM running Whiskers |
 | `ludus_litterbox_elastic_agent_port` | `8080` | Whiskers agent port |
 | `ludus_litterbox_elastic_url` | `""` | Elasticsearch host:port |
-| `ludus_litterbox_elastic_apikey` | `""` | Base64-encoded API key from Kibana |
+| `ludus_litterbox_elastic_apikey` | `""` | Base64-encoded API key (leave empty for auto-generation) |
+| `ludus_litterbox_elastic_auto_apikey` | `false` | Auto-generate API key via Elasticsearch API |
+| `ludus_litterbox_elastic_username` | `"elastic"` | Elasticsearch user for API key creation |
+| `ludus_litterbox_elastic_password` | `""` | Elasticsearch password (use ansible-vault) |
 | `ludus_litterbox_elastic_verify_tls` | `false` | Verify Elasticsearch TLS certificate |
 | `ludus_litterbox_elastic_wait_alerts` | `90` | Seconds to wait for alerts after execution |
 | `ludus_litterbox_elastic_av_block_wait` | `60` | Seconds to wait for AV block verdicts |

@@ -1,0 +1,48 @@
+---
+# Generate an Elasticsearch API key via the _security/api_key REST API.
+# Runs on the Ludus host (localhost) so it can reach the Elastic cluster directly.
+
+- name: Generate Elasticsearch API key
+  ansible.builtin.uri:
+    url: "https://{{ ludus_litterbox_elastic_url }}/_security/api_key"
+    method: POST
+    user: "{{ ludus_litterbox_elastic_username }}"
+    password: "{{ ludus_litterbox_elastic_password }}"
+    force_basic_auth: true
+    validate_certs: "{{ ludus_litterbox_elastic_verify_tls }}"
+    body_format: json
+    body:
+      name: "litterbox-{{ inventory_hostname | lower }}-{{ ansible_date_time.epoch }}"
+      role_descriptors:
+        litterbox_readonly:
+          cluster:
+            - monitor
+          indices:
+            - names:
+                - ".alerts-security.alerts-*"
+                - ".internal.alerts-security.alerts-*"
+                - ".ds-logs-endpoint.alerts-*"
+              privileges:
+                - read
+      metadata:
+        application: litterbox
+        created_by: ludus_litterbox_role
+        target_host: "{{ inventory_hostname }}"
+    status_code: 200
+    return_content: true
+  delegate_to: localhost
+  become: false
+  register: elastic_apikey_response
+  no_log: true
+
+- name: Set API key fact from response
+  ansible.builtin.set_fact:
+    ludus_litterbox_elastic_apikey: "{{ elastic_apikey_response.json.encoded }}"
+  no_log: true
+
+- name: Display API key creation result
+  ansible.builtin.debug:
+    msg:
+      - "Elasticsearch API key generated successfully"
+      - "Key name: litterbox-{{ inventory_hostname | lower }}-{{ ansible_date_time.epoch }}"
+      - "Key ID: {{ elastic_apikey_response.json.id }}"
