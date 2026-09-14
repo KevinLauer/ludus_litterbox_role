@@ -27,6 +27,13 @@
     dest: "{{ ludus_litterbox_install_dir }}\\LitterBox\\Config\\edr_profiles\\elastic.yml"
     backup: true
 
+- name: Restart LitterBox to load EDR profile
+  ansible.windows.win_shell: |
+    schtasks /end /tn "LITTERBOX"
+    Start-Sleep -Seconds 3
+    schtasks /run /tn "LITTERBOX"
+  ignore_errors: true
+
 - name: Display Elastic profile configuration
   ansible.builtin.debug:
     msg:
@@ -34,3 +41,4 @@
       - "Whiskers agent: http://{{ ludus_litterbox_elastic_agent_ip }}:{{ ludus_litterbox_elastic_agent_port }}"
       - "Elastic URL: https://{{ ludus_litterbox_elastic_url }}"
       - "Profile path: {{ ludus_litterbox_install_dir }}\\LitterBox\\Config\\edr_profiles\\elastic.yml"
+      - "LitterBox has been restarted to load the new profile."

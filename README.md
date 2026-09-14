@@ -422,7 +422,7 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 **IMPORTANT**: This tool is intended for authorized security testing and research purposes only. Users are solely responsible for complying with all applicable laws and regulations in their jurisdiction. 
 
 
-**Role Version**: 1.0.0  
+**Role Version**: 1.0.2  
 **LitterBox Compatibility**: Latest  
-**Last Updated**: 2025  
-**Maintained by**: Professor Moody
+**Last Updated**: 2026
+**Maintained by**: Whispergate, original Version by professor-moody.
