@@ -1,3 +1,3 @@
 @echo off
 cd /d "{{ ludus_litterbox_app_dir }}"
-"{{ ludus_litterbox_app_dir }}\venv\Scripts\python.exe" GrumpyCats\LitterBoxMCP.py --transport streamable-http --host {{ ludus_litterbox_mcp_host }} --port {{ ludus_litterbox_mcp_port }}
+"{{ ludus_litterbox_app_dir }}\venv\Scripts\python.exe" "{{ ludus_litterbox_install_dir }}\run_mcp.py" --transport streamable-http --host {{ ludus_litterbox_mcp_host }} --port {{ ludus_litterbox_mcp_port }}

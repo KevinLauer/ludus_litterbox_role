@@ -1,0 +1,17 @@
+import sys
+from pathlib import Path
+
+APP_DIR = Path(r"{{ ludus_litterbox_app_dir }}")
+sys.path.insert(0, str(APP_DIR / "GrumpyCats"))
+
+from mcp.server.transport_security import TransportSecuritySettings
+
+import LitterBoxMCP
+
+LitterBoxMCP.mcp.settings.transport_security = TransportSecuritySettings(
+    enable_dns_rebinding_protection=False,
+    allowed_hosts=["*"],
+)
+
+if __name__ == "__main__":
+    LitterBoxMCP.main()

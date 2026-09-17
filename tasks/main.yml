@@ -244,6 +244,12 @@
         src: start_litterbox.bat.j2
         dest: "{{ ludus_litterbox_install_dir }}\\start_litterbox.bat"
 
+    - name: Create LitterBox MCP launcher
+      ansible.windows.win_template:
+        src: run_mcp.py.j2
+        dest: "{{ ludus_litterbox_install_dir }}\\run_mcp.py"
+      when: ludus_litterbox_enable_mcp
+
     - name: Create batch file to start LitterBox MCP
       ansible.windows.win_template:
         src: start_mcp.bat.j2
@@ -279,8 +285,8 @@
         name: "LITTERBOX-MCP"
         description: "Start LitterBox FastMCP on boot"
         actions:
-          - path: "{{ ludus_litterbox_install_dir }}\\start_mcp.bat"
-            arguments: ""
+          - path: cmd.exe
+            arguments: '/c "{{ ludus_litterbox_install_dir }}\\start_mcp.bat >> "{{ ludus_litterbox_app_dir }}\\logs\\mcp.log" 2>&1"'
         triggers:
           - type: boot
         username: "SYSTEM"
