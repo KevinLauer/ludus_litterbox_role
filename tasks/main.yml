@@ -199,7 +199,7 @@
         cd "{{ ludus_litterbox_app_dir }}"
         .\\venv\\Scripts\\pip.exe install --upgrade pip
         .\\venv\\Scripts\\pip.exe install -r requirements.txt
-        .\\venv\\Scripts\\pip.exe install "mcp[cli]>=1.0.0"
+        .\\venv\\Scripts\\pip.exe install "mcp[cli]<2"
       register: pip_install
       retries: 3
       delay: 10
@@ -368,18 +368,18 @@
       when: ludus_litterbox_enable_mcp
       failed_when: false
 
-    - name: Setup Whiskers on this Windows VM
-      ansible.builtin.include_tasks: whiskers.yml
-      when: ludus_litterbox_enable_whiskers
-      tags:
-        - whiskers
-
     - name: Configure Elastic Defend EDR profile
       ansible.builtin.include_tasks: elastic_profile.yml
       when: ludus_litterbox_elastic_enabled
       tags:
         - elastic
         - edr
+
+    - name: Setup Whiskers on this Windows VM
+      ansible.builtin.include_tasks: whiskers.yml
+      when: ludus_litterbox_enable_whiskers
+      tags:
+        - whiskers
 
     - name: Display installation complete message
       ansible.builtin.debug:
