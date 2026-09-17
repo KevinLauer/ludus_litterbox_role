@@ -1,0 +1,39 @@
+---
+- name: Ensure Tools directory exists
+  ansible.windows.win_file:
+    path: "{{ ludus_litterbox_tools_dir }}"
+    state: directory
+
+- name: Check if pre-built Whiskers.exe exists in LitterBox repo
+  ansible.windows.win_stat:
+    path: "{{ ludus_litterbox_app_dir }}\\Whiskers\\target\\release\\Whiskers.exe"
+  register: whiskers_in_repo
+
+- name: Copy Whiskers binary from local LitterBox repo if present
+  ansible.windows.win_copy:
+    src: "{{ ludus_litterbox_app_dir }}\\Whiskers\\target\\release\\Whiskers.exe"
+    dest: "{{ ludus_litterbox_tools_dir }}\\Whiskers.exe"
+    remote_src: true
+  when: whiskers_in_repo.stat.exists
+
+- name: Check if Whiskers.exe is already in Tools
+  ansible.windows.win_stat:
+    path: "{{ ludus_litterbox_tools_dir }}\\Whiskers.exe"
+  register: whiskers_in_tools
+
+- name: Download Whiskers binary if not present
+  ansible.windows.win_shell: |
+    [System.Net.ServicePointManager]::SecurityProtocol = [System.Net.ServicePointManager]::SecurityProtocol -bor 3072
+    Invoke-WebRequest -Uri "{{ ludus_litterbox_whiskers_download_url }}" -OutFile "{{ ludus_litterbox_tools_dir }}\\Whiskers.exe" -UseBasicParsing
+  when: not whiskers_in_tools.stat.exists and not whiskers_in_repo.stat.exists
+  failed_when: false
+
+- name: Register and start Whiskers
+  ansible.windows.win_shell: |
+    if (Test-Path "{{ ludus_litterbox_tools_dir }}\\Whiskers.exe") {
+      & "{{ ludus_litterbox_tools_dir }}\\Whiskers.exe" --install --port {{ ludus_litterbox_whiskers_port }} --bind {{ ludus_litterbox_whiskers_host }}
+      if (-not (Get-Process -Name "Whiskers" -ErrorAction SilentlyContinue)) {
+        Start-Process -FilePath "{{ ludus_litterbox_tools_dir }}\\Whiskers.exe" -ArgumentList "--port", "{{ ludus_litterbox_whiskers_port }}", "--bind", "{{ ludus_litterbox_whiskers_host }}" -WindowStyle Hidden
+      }
+    }
+  failed_when: false

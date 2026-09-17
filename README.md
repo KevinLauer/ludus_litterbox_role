@@ -58,10 +58,9 @@ ludus range deploy -t user-defined-roles  --only-roles ludus_litterbox_role --li
 ## Manual Installation
 
 ```
-# Clone the repository
-git clone https://github.com/professor-moody/ludus_litterbox_role
+git clone https://github.com/KevinLauer/ludus_litterbox_role.git
 cd ludus_litterbox_role
-ludus roles add -d ludus_litterbox_role
+ludus ansible role add -d .
 ```
 
 # Add directly from Ansible Galaxy
@@ -76,15 +75,15 @@ ludus roles add -d ludus_litterbox_role
 # Core Installation Settings
 ludus_litterbox_install: true                              # Enable/disable installation
 ludus_litterbox_install_dir: "C:\\Tools\\LitterBox"       # Installation directory
-ludus_litterbox_python_version: "3.11.9"                  # Python version to install
+ludus_litterbox_python_version: "3.12.0"
 ludus_litterbox_repo_url: "https://github.com/BlackSnufkin/LitterBox.git"
 
 # Network Configuration
-ludus_litterbox_host: "127.0.0.1"                         # Bind address (use 0.0.0.0 for network access)
+ludus_litterbox_host: "0.0.0.0"
 ludus_litterbox_port: 1337                                # Web interface port
 
 # Security Settings
-ludus_litterbox_disable_defender: true                    # Disable Windows Defender (LAB USE ONLY!)
+ludus_litterbox_disable_defender: false                    # Keep Defender/Elastic Defend running
 ludus_litterbox_defender_exclusions: true                 # Add AV exclusions
 ludus_litterbox_require_admin: true                       # Require admin privileges
 
@@ -139,101 +138,52 @@ ludus_litterbox_debug: false                              # Enable debug logging
 
 ## Elastic Defend Integration
 
-LitterBox supports [Elastic Defend](https://github.com/BlackSnufkin/LitterBox/wiki/Elastic-Defend-Setup) as an EDR backend. This requires three components:
+This fork is meant to sit on the same Windows VM as [KevinLauer/ludus_elastic_agent](https://github.com/KevinLauer/ludus_elastic_agent), talking to [KevinLauer/ludus_elastic_container](https://github.com/KevinLauer/ludus_elastic_container).
 
-1. **Elastic Stack** (Elasticsearch + Kibana + Fleet) — deployed separately
-2. **Whiskers agent** on the EDR VM — use the companion [`ludus_litterbox_whiskers_agent`](https://github.com/Whispergate/ludus_litterbox_whiskers_agent) role
-3. **EDR profile** in LitterBox — configured by this role when enabled
+With `ludus_litterbox_elastic_enabled: true` (the default) the role:
 
-### Prerequisites
+1. Finds the VM whose roles include `ludus_elastic_container`
+2. Builds `https://10.<octet>.<vlan>.<ip>:9200`
+3. Reads `ludus_elastic_password` from that VM's `role_vars`
+4. Creates a read-only Elasticsearch API key
+5. Writes `Config/edr_profiles/elastic.yml` with Whiskers at `http://127.0.0.1:8080`
 
-- The [`ludus_litterbox_whiskers_agent`](https://github.com/Whispergate/ludus_litterbox_whiskers_agent) role deployed on the EDR Windows VM
-- Elastic Stack running and accessible
-- Elastic Agent with Elastic Defend enrolled on the EDR Windows VM
-- Detection Engine rules enabled in Kibana (Security -> Manage -> Rules)
-- Whiskers agent deployed on the EDR VM and whitelisted in Defend's Trusted Applications
+Keep `ludus_litterbox_disable_defender: false` so Elastic Defend can still see payloads. This role installs Whiskers itself; do not deploy a second whiskers companion role on this VM.
 
-### Elasticsearch API Key
+Use `ludus_elastic_agent_mode: detect` or `prevent` on the **agent** role. That selects `enrollment_token_detect.txt` / `enrollment_token_prevent.txt` on the container. LitterBox only reads Elasticsearch alerts; it does not pick the Fleet token.
 
-The role can **automatically generate** a scoped, read-only API key via the Elasticsearch `_security/api_key` REST API. This is the default behavior — just provide Elasticsearch credentials and leave `ludus_litterbox_elastic_apikey` empty.
-
-**Automatic generation** (recommended):
+### Example range (same layout as `ludus-range-litterbox.yml`)
 
 ```yaml
-  vars:
-    ludus_litterbox_elastic_enabled: true
-    ludus_litterbox_elastic_agent_ip: "10.x.x.x"      # EDR VM running Whiskers
-    ludus_litterbox_elastic_agent_port: 8080
-    ludus_litterbox_elastic_url: "10.x.x.x:9200"      # Elasticsearch host:port
-    ludus_litterbox_elastic_username: "elastic"         # User with manage_api_key privilege
-    ludus_litterbox_elastic_password: "changeme"        # Use ansible-vault or ludus secrets
-    ludus_litterbox_elastic_verify_tls: false
+    roles:
+      - name: ludus_elastic_agent
+        depends_on:
+          - vm_name: "{{ range_id }}-elastic-server"
+            role: ludus_elastic_container
+      - name: ludus_litterbox
+        depends_on:
+          - vm_name: "{{ range_id }}-elastic-server"
+            role: ludus_elastic_container
+    role_vars:
+      ludus_elastic_agent_mode: "detect"
+      ludus_litterbox_elastic_enabled: true
+      ludus_litterbox_disable_defender: false
 ```
 
-The generated key is scoped to read-only access on:
-- `.alerts-security.alerts-*` — Detection Engine rule signals
-- `.internal.alerts-security.alerts-*` — internal alert indices
-- `.ds-logs-endpoint.alerts-*` — Elastic Defend endpoint alerts
-
-Each key is uniquely named per target host (e.g. `litterbox-ws01-1726300800`).
-
-> **Tip:** Store the Elasticsearch password securely using `ansible-vault encrypt_string` or Ludus secrets rather than plain text in your config.
-
-**Manual key** (set `ludus_litterbox_elastic_auto_apikey: false` or provide a key directly):
-
-```yaml
-  vars:
-    ludus_litterbox_elastic_enabled: true
-    ludus_litterbox_elastic_agent_ip: "10.x.x.x"
-    ludus_litterbox_elastic_url: "10.x.x.x:9200"
-    ludus_litterbox_elastic_apikey: "<base64-key>"     # Pre-created API key
-    ludus_litterbox_elastic_auto_apikey: false
-```
-
-<details>
-<summary>Creating a manual API key in Kibana</summary>
-
-1. Open Kibana (e.g. `https://<elastic-ip>:5601`)
-2. Navigate to **Stack Management** -> **API keys** (under Security)
-3. Click **Create API key**
-4. Set a name (e.g. `litterbox-readonly`)
-5. Enable **Restrict privileges** and paste the following role descriptor:
-
-```json
-{
-  "litterbox_reader": {
-    "cluster": ["monitor"],
-    "indices": [
-      {
-        "names": [
-          ".alerts-security.alerts-*",
-          ".internal.alerts-security.alerts-*",
-          ".ds-logs-endpoint.alerts-*"
-        ],
-        "privileges": ["read"]
-      }
-    ]
-  }
-}
-```
-
-6. Click **Create API key**
-7. Copy the **Encoded** value — this is the base64 string to use as `ludus_litterbox_elastic_apikey`
-
-</details>
+Override `ludus_litterbox_elastic_url` / `ludus_litterbox_elastic_password` only if auto-discovery cannot see the container VM.
 
 ### Elastic Defend Variables
 
 | Variable | Default | Description |
 |---|---|---|
-| `ludus_litterbox_elastic_enabled` | `false` | Enable Elastic Defend EDR profile |
-| `ludus_litterbox_elastic_agent_ip` | `""` | IP of the EDR VM running Whiskers |
+| `ludus_litterbox_elastic_enabled` | `true` | Enable Elastic Defend EDR profile |
+| `ludus_litterbox_elastic_agent_ip` | `127.0.0.1` | Whiskers on this Windows VM |
 | `ludus_litterbox_elastic_agent_port` | `8080` | Whiskers agent port |
-| `ludus_litterbox_elastic_url` | `""` | Elasticsearch host:port |
-| `ludus_litterbox_elastic_apikey` | `""` | Base64-encoded API key (leave empty for auto-generation) |
-| `ludus_litterbox_elastic_auto_apikey` | `false` | Auto-generate API key via Elasticsearch API |
-| `ludus_litterbox_elastic_username` | `"elastic"` | Elasticsearch user for API key creation |
-| `ludus_litterbox_elastic_password` | `""` | Elasticsearch password (use ansible-vault) |
+| `ludus_litterbox_elastic_url` | auto | Elasticsearch `host:port`; discovered from `ludus_elastic_container` |
+| `ludus_litterbox_elastic_apikey` | auto | Leave empty to generate |
+| `ludus_litterbox_elastic_auto_apikey` | `true` | Create a read-only API key |
+| `ludus_litterbox_elastic_username` | `"elastic"` | User for API key creation |
+| `ludus_litterbox_elastic_password` | auto | From container `ludus_elastic_password` |
 | `ludus_litterbox_elastic_verify_tls` | `false` | Verify Elasticsearch TLS certificate |
 | `ludus_litterbox_elastic_wait_alerts` | `90` | Seconds to wait for alerts after execution |
 | `ludus_litterbox_elastic_av_block_wait` | `60` | Seconds to wait for AV block verdicts |
@@ -241,14 +191,9 @@ Each key is uniquely named per target host (e.g. `litterbox-ws01-1726300800`).
 
 ### Verify Elastic Integration
 
-After deployment, verify from the LitterBox VM:
-
 ```bash
-# Check Whiskers agent connectivity
-curl http://<edr-vm-ip>:8080/api/info
-
-# Check Elastic connectivity (from LitterBox Python env)
-python GrumpyCats/grumpycat.py edr-status
+curl http://<windows-ip>:8080/api/info
+curl -k https://<elastic-ip>:9200
 ```
 
 ## Post-Installation Usage

@@ -50,7 +50,7 @@
     name: NET-Framework-Core
     state: present
   when: "'Windows Server' in ansible_distribution"
-  ignore_errors: yes
+  ignore_errors: true
   tags:
     - dependencies
 
@@ -59,7 +59,7 @@
     name: NetFx3
     state: present
   when: "'Windows Server' not in ansible_distribution"
-  ignore_errors: yes
+  ignore_errors: true
   tags:
     - dependencies
 
@@ -86,16 +86,17 @@
   tags:
     - chocolatey
 
-- name: Install Python3 on Windows
+- name: Install Python 3.12 on Windows
   block:
     - name: Add Choco to PATH
       ansible.windows.win_shell: SET "PATH=%PATH%;%ALLUSERSPROFILE%\chocolatey\bin"
-    - name: Install Python3 using Choco
-      ansible.windows.win_shell: powershell choco install -y python3
+    - name: Install Python 3.12 using Choco
+      ansible.windows.win_shell: powershell choco install -y {{ ludus_litterbox_python_package }}
     - name: Verify Chocolatey installation
       ansible.windows.win_command: choco --version
     - name: Verify Python installation
-      ansible.windows.win_command: python --version
+      ansible.windows.win_command: "{{ ludus_litterbox_python_executable }} --version"
+  when: ludus_litterbox_install_python
 
 - name: Install LitterBox
   when: ludus_litterbox_install
@@ -110,7 +111,7 @@
 
     - name: Disable Windows Defender 1
       ansible.windows.win_shell: 'Add-MpPreference -ExclusionPath C:\'
-      ignore_errors: yes
+      ignore_errors: true
       when: ludus_litterbox_disable_defender
       tags:
         - defender
@@ -128,7 +129,7 @@
         New-Item -Path "HKLM:\SOFTWARE\Policies\Microsoft\Windows Defender\Spynet" -Force | Out-Null
         Set-ItemProperty -Path "HKLM:\SOFTWARE\Policies\Microsoft\Windows Defender\Spynet" -Name "SpynetReporting" -Value 0 -Type DWord
         Set-ItemProperty -Path "HKLM:\SOFTWARE\Policies\Microsoft\Windows Defender\Spynet" -Name "SubmitSamplesConsent" -Value 2 -Type DWord
-      ignore_errors: yes
+      ignore_errors: true
       when: ludus_litterbox_disable_defender
       tags:
         - defender
@@ -176,18 +177,29 @@
           git clone {{ ludus_litterbox_repo_url }}
         }
 
-    - name: Create Python virtual environment
+    - name: Create Python 3.12 virtual environment
       ansible.windows.win_shell: |
-        cd "{{ ludus_litterbox_install_dir }}\\LitterBox"
-        python -m venv venv
-      args:
-        creates: "{{ ludus_litterbox_install_dir }}\\LitterBox\\venv"
+        cd "{{ ludus_litterbox_app_dir }}"
+        $rebuild = $false
+        if (Test-Path ".\venv\Scripts\python.exe") {
+          $ver = (& ".\venv\Scripts\python.exe" --version 2>&1)
+          if ($ver -notmatch "3\.12") {
+            Remove-Item -Recurse -Force ".\venv"
+            $rebuild = $true
+          }
+        } else {
+          $rebuild = $true
+        }
+        if ($rebuild) {
+          & "{{ ludus_litterbox_python_executable }}" -m venv venv
+        }
 
     - name: Install Python requirements
       ansible.windows.win_shell: |
-        cd "{{ ludus_litterbox_install_dir }}\\LitterBox"
+        cd "{{ ludus_litterbox_app_dir }}"
         .\\venv\\Scripts\\pip.exe install --upgrade pip
         .\\venv\\Scripts\\pip.exe install -r requirements.txt
+        .\\venv\\Scripts\\pip.exe install "mcp[cli]>=1.0.0"
       register: pip_install
       retries: 3
       delay: 10
@@ -235,6 +247,28 @@
         enabled: yes
       when: ludus_litterbox_firewall_rule
 
+    - name: Create Windows Firewall rule for LitterBox MCP
+      community.windows.win_firewall_rule:
+        name: "LitterBox MCP"
+        localport: "{{ ludus_litterbox_mcp_port }}"
+        action: allow
+        direction: in
+        protocol: tcp
+        state: present
+        enabled: yes
+      when: ludus_litterbox_firewall_rule and ludus_litterbox_enable_mcp
+
+    - name: Create Windows Firewall rule for Whiskers
+      community.windows.win_firewall_rule:
+        name: "LitterBox Whiskers"
+        localport: "{{ ludus_litterbox_whiskers_port }}"
+        action: allow
+        direction: in
+        protocol: tcp
+        state: present
+        enabled: yes
+      when: ludus_litterbox_firewall_rule and ludus_litterbox_enable_whiskers
+
     - name: Make required LitterBox config changes
       block:
         - name: Load existing LitterBox config.yaml
@@ -270,6 +304,12 @@
         src: start_litterbox.bat.j2
         dest: "{{ ludus_litterbox_install_dir }}\\start_litterbox.bat"
 
+    - name: Create batch file to start LitterBox MCP
+      ansible.windows.win_template:
+        src: start_mcp.bat.j2
+        dest: "{{ ludus_litterbox_install_dir }}\\start_mcp.bat"
+      when: ludus_litterbox_enable_mcp
+
     - name: Create desktop shortcut for LitterBox
       community.windows.win_shortcut:
         src: "{{ ludus_litterbox_install_dir }}\\start_litterbox.bat"
@@ -294,6 +334,21 @@
         enabled: true
       when: ludus_litterbox_autostart
 
+    - name: Create a scheduled task for LitterBox MCP
+      community.windows.win_scheduled_task:
+        name: "LITTERBOX-MCP"
+        description: "Start LitterBox FastMCP on boot"
+        actions:
+          - path: "{{ ludus_litterbox_install_dir }}\\start_mcp.bat"
+            arguments: ""
+        triggers:
+          - type: boot
+        username: "SYSTEM"
+        run_level: highest
+        state: present
+        enabled: true
+      when: ludus_litterbox_autostart and ludus_litterbox_enable_mcp
+
     - name: Download GrumpyCats client library
       ansible.windows.win_shell: |
         cd "{{ ludus_litterbox_install_dir }}\\LitterBox"
@@ -308,6 +363,17 @@
     - name: Execute LitterBox task
       ansible.windows.win_shell: schtasks /run /tn "LITTERBOX"
 
+    - name: Execute LitterBox MCP task
+      ansible.windows.win_shell: schtasks /run /tn "LITTERBOX-MCP"
+      when: ludus_litterbox_enable_mcp
+      failed_when: false
+
+    - name: Setup Whiskers on this Windows VM
+      ansible.builtin.include_tasks: whiskers.yml
+      when: ludus_litterbox_enable_whiskers
+      tags:
+        - whiskers
+
     - name: Configure Elastic Defend EDR profile
       ansible.builtin.include_tasks: elastic_profile.yml
       when: ludus_litterbox_elastic_enabled
@@ -319,12 +385,9 @@
       ansible.builtin.debug:
         msg:
           - "LitterBox has been successfully installed!"
-          - "Installation directory: {{ ludus_litterbox_install_dir }}\\LitterBox"
-          - "Web interface will run on default port when started"
-          - "To start LitterBox:"
-          - "  - Use the desktop shortcut 'LitterBox'"
-          - "  - Or run: {{ ludus_litterbox_install_dir }}\\start_litterbox.bat"
-          - "  - Or manually: cd {{ ludus_litterbox_install_dir }}\\LitterBox && .\\venv\\Scripts\\python.exe litterbox.py"
-          - ""
-          - "⚠️  SECURITY WARNING: LitterBox is designed for isolated testing environments only!"
-          - "Do not use in production or on systems with sensitive data."
+          - "Installation directory: {{ ludus_litterbox_app_dir }}"
+          - "Web: http://{{ ansible_host }}:{{ ludus_litterbox_port }}"
+          - "MCP: http://{{ ansible_host }}:{{ ludus_litterbox_mcp_port }}"
+          - "Whiskers: http://{{ ansible_host }}:{{ ludus_litterbox_whiskers_port }}"
+          - "Start: {{ ludus_litterbox_install_dir }}\\start_litterbox.bat"
+          - "SECURITY WARNING: LitterBox is for isolated lab networks only."

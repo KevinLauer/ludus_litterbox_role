@@ -1,0 +1,4 @@
+@echo off
+cd /d "{{ ludus_litterbox_app_dir }}"
+call .\venv\Scripts\activate.bat
+python GrumpyCats\LitterBoxMCP.py --transport streamable-http --host {{ ludus_litterbox_mcp_host }} --port {{ ludus_litterbox_mcp_port }}

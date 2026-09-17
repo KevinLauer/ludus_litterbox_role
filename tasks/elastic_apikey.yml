@@ -1,48 +1,65 @@
 ---
-# Generate an Elasticsearch API key via the _security/api_key REST API.
-# Runs on the Ludus host (localhost) so it can reach the Elastic cluster directly.
-
-- name: Generate Elasticsearch API key
-  ansible.builtin.uri:
-    url: "https://{{ ludus_litterbox_elastic_url }}/_security/api_key"
-    method: POST
-    user: "{{ ludus_litterbox_elastic_username }}"
-    password: "{{ ludus_litterbox_elastic_password }}"
-    force_basic_auth: true
-    validate_certs: "{{ ludus_litterbox_elastic_verify_tls }}"
-    body_format: json
-    body:
-      name: "litterbox-{{ inventory_hostname | lower }}-{{ ansible_date_time.epoch }}"
-      role_descriptors:
-        litterbox_readonly:
-          cluster:
-            - monitor
-          indices:
-            - names:
-                - ".alerts-security.alerts-*"
-                - ".internal.alerts-security.alerts-*"
-                - ".ds-logs-endpoint.alerts-*"
-              privileges:
-                - read
-      metadata:
-        application: litterbox
-        created_by: ludus_litterbox_role
-        target_host: "{{ inventory_hostname }}"
-    status_code: 200
-    return_content: true
-  delegate_to: localhost
-  become: false
-  register: elastic_apikey_response
+- name: Generate Elasticsearch API key from this Windows VM
+  ansible.windows.win_shell: |
+    [System.Net.ServicePointManager]::ServerCertificateValidationCallback = {$true}
+    [System.Net.ServicePointManager]::SecurityProtocol = [System.Net.SecurityProtocolType]::Tls12 -bor [System.Net.SecurityProtocolType]::Tls13
+    $auth = [Convert]::ToBase64String([Text.Encoding]::ASCII.GetBytes("{{ ludus_litterbox_elastic_username }}:{{ ludus_litterbox_elastic_password }}"))
+    $headers = @{
+      "Authorization" = "Basic $auth"
+      "Content-Type"  = "application/json"
+    }
+    $body = @{
+      name = "litterbox-{{ inventory_hostname | lower }}"
+      role_descriptors = @{
+        litterbox_reader = @{
+          cluster = @("monitor")
+          indices = @(
+            @{
+              names = @(
+                ".alerts-security.alerts-*",
+                ".internal.alerts-security.alerts-*",
+                ".ds-logs-endpoint.alerts-*"
+              )
+              privileges = @("read", "view_index_metadata")
+            }
+          )
+        }
+      }
+    } | ConvertTo-Json -Depth 5
+    $resp = Invoke-RestMethod -Uri "https://{{ ludus_litterbox_elastic_url }}/_security/api_key" -Method Post -Headers $headers -Body $body -TimeoutSec 20
+    Write-Output $resp.encoded
+  register: win_generated_apikey
   no_log: true
+  failed_when: false
 
-- name: Set API key fact from response
+- name: Fallback generate Elasticsearch API key on the container VM
+  ansible.builtin.shell: |
+    curl -k -s -u "{{ ludus_litterbox_elastic_username }}:{{ ludus_litterbox_elastic_password }}" \
+      -X POST "https://127.0.0.1:9200/_security/api_key" \
+      -H "Content-Type: application/json" \
+      -d '{"name":"litterbox-{{ inventory_hostname | lower }}","role_descriptors":{"litterbox_reader":{"cluster":["monitor"],"indices":[{"names":[".alerts-security.alerts-*",".internal.alerts-security.alerts-*",".ds-logs-endpoint.alerts-*"],"privileges":["read","view_index_metadata"]}]}}}'
+  register: linux_generated_apikey
+  delegate_to: "{{ discovered_elastic_vm.vm_name }}"
+  no_log: true
+  failed_when: false
+  when:
+    - (win_generated_apikey.stdout | default('') | trim) == ""
+    - discovered_elastic_vm is defined
+    - discovered_elastic_vm != None
+    - discovered_elastic_vm.vm_name is defined
+
+- name: Set API key from Windows response
   ansible.builtin.set_fact:
-    ludus_litterbox_elastic_apikey: "{{ elastic_apikey_response.json.encoded }}"
+    ludus_litterbox_elastic_apikey: "{{ win_generated_apikey.stdout | trim }}"
   no_log: true
+  when: (win_generated_apikey.stdout | default('') | trim) | length > 10
 
-- name: Display API key creation result
-  ansible.builtin.debug:
-    msg:
-      - "Elasticsearch API key generated successfully"
-      - "Key name: litterbox-{{ inventory_hostname | lower }}-{{ ansible_date_time.epoch }}"
-      - "Key ID: {{ elastic_apikey_response.json.id }}"
+- name: Set API key from container VM response
+  ansible.builtin.set_fact:
+    ludus_litterbox_elastic_apikey: "{{ (linux_generated_apikey.stdout | from_json).encoded }}"
+  no_log: true
+  when:
+    - ludus_litterbox_elastic_apikey | length == 0
+    - linux_generated_apikey is defined
+    - linux_generated_apikey.stdout is defined
+    - linux_generated_apikey.stdout | length > 0

@@ -1,0 +1,42 @@
+---
+- name: Discover Elastic container VM in the Ludus range
+  ansible.builtin.set_fact:
+    discovered_elastic_vm: "{{ ludus | search_roles('ludus_elastic_container') }}"
+  failed_when: false
+  when: ludus is defined
+
+- name: Derive Elastic server IP from the container VM
+  ansible.builtin.set_fact:
+    discovered_elastic_ip: "10.{{ range_second_octet }}.{{ discovered_elastic_vm.vlan }}.{{ discovered_elastic_vm.ip_last_octet }}"
+  when:
+    - discovered_elastic_vm is defined
+    - discovered_elastic_vm != None
+    - discovered_elastic_vm.vlan is defined
+    - discovered_elastic_vm.ip_last_octet is defined
+
+- name: Set Elasticsearch host:port when unset
+  ansible.builtin.set_fact:
+    ludus_litterbox_elastic_url: "{{ discovered_elastic_ip }}:9200"
+  when:
+    - ludus_litterbox_elastic_url | length == 0
+    - discovered_elastic_ip is defined
+
+- name: Strip scheme from Elasticsearch URL
+  ansible.builtin.set_fact:
+    ludus_litterbox_elastic_url: "{{ ludus_litterbox_elastic_url | regex_replace('^https?://', '') }}"
+  when: ludus_litterbox_elastic_url | length > 0
+
+- name: Set Elasticsearch password from container role_vars when unset
+  ansible.builtin.set_fact:
+    ludus_litterbox_elastic_password: "{{ discovered_elastic_vm.role_vars.ludus_elastic_password }}"
+  when:
+    - ludus_litterbox_elastic_password | length == 0
+    - discovered_elastic_vm is defined
+    - discovered_elastic_vm != None
+    - discovered_elastic_vm.role_vars is defined
+    - discovered_elastic_vm.role_vars.ludus_elastic_password is defined
+
+- name: Default Whiskers to this Windows VM
+  ansible.builtin.set_fact:
+    ludus_litterbox_elastic_agent_ip: "127.0.0.1"
+  when: ludus_litterbox_elastic_agent_ip | length == 0

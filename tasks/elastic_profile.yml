@@ -1,30 +1,48 @@
 ---
-# Tasks to configure Elastic Defend EDR profile for LitterBox
+- name: Discover KevinLauer / badsectorlabs Elastic container
+  ansible.builtin.include_tasks: discover_elastic.yml
+
+- name: Fail when Elasticsearch URL is still empty
+  ansible.builtin.assert:
+    that:
+      - ludus_litterbox_elastic_url | length > 0
+    fail_msg: >-
+      Could not find a VM with role ludus_elastic_container and ludus_litterbox_elastic_url is empty.
+      Deploy KevinLauer/ludus_elastic_container (or badsectorlabs.ludus_elastic_container) in the range,
+      or set ludus_litterbox_elastic_url to host:port (example 10.x.x.2:9200).
+
+- name: Fail when Elasticsearch password is still empty
+  ansible.builtin.assert:
+    that:
+      - ludus_litterbox_elastic_password | length > 0 or ludus_litterbox_elastic_apikey | length > 0
+    fail_msg: >-
+      Set ludus_elastic_password on the Elastic container VM, or set
+      ludus_litterbox_elastic_password / ludus_litterbox_elastic_apikey on this role.
 
 - name: Generate Elasticsearch API key automatically
   ansible.builtin.include_tasks: elastic_apikey.yml
   when:
-    - ludus_litterbox_elastic_auto_apikey | default(true)
+    - ludus_litterbox_elastic_auto_apikey | bool
     - ludus_litterbox_elastic_apikey | length == 0
+    - ludus_litterbox_elastic_password | length > 0
 
 - name: Validate Elasticsearch API key is available
   ansible.builtin.assert:
     that:
-      - ludus_litterbox_elastic_apikey | length > 0
+      - ludus_litterbox_elastic_apikey | length > 10
     fail_msg: >-
-      No Elasticsearch API key available. Either set ludus_litterbox_elastic_apikey manually,
-      or provide ludus_litterbox_elastic_username and ludus_litterbox_elastic_password
-      for automatic key generation.
+      No Elasticsearch API key available. Provide ludus_litterbox_elastic_apikey or
+      a working ludus_elastic_password on the container VM.
 
 - name: Create EDR profiles directory
   ansible.windows.win_file:
-    path: "{{ ludus_litterbox_install_dir }}\\LitterBox\\Config\\edr_profiles"
+    path: "{{ ludus_litterbox_app_dir }}\\Config\\edr_profiles"
     state: directory
 
 - name: Deploy Elastic Defend EDR profile
   ansible.windows.win_template:
     src: elastic_profile.yml.j2
-    dest: "{{ ludus_litterbox_install_dir }}\\LitterBox\\Config\\edr_profiles\\elastic.yml"
+    dest: "{{ ludus_litterbox_app_dir }}\\Config\\edr_profiles\\elastic.yml"
     backup: true
 
 - name: Restart LitterBox to load EDR profile
@@ -37,8 +55,7 @@
 - name: Display Elastic profile configuration
   ansible.builtin.debug:
     msg:
-      - "Elastic Defend EDR profile configured!"
+      - "Elastic Defend EDR profile configured"
       - "Whiskers agent: http://{{ ludus_litterbox_elastic_agent_ip }}:{{ ludus_litterbox_elastic_agent_port }}"
       - "Elastic URL: https://{{ ludus_litterbox_elastic_url }}"
-      - "Profile path: {{ ludus_litterbox_install_dir }}\\LitterBox\\Config\\edr_profiles\\elastic.yml"
-      - "LitterBox has been restarted to load the new profile."
+      - "Profile path: {{ ludus_litterbox_app_dir }}\\Config\\edr_profiles\\elastic.yml"
