@@ -8,9 +8,25 @@ ludus_litterbox_install: true
 ludus_litterbox_install_dir: "C:\\Tools\\LitterBox"
 
 ludus_litterbox_python_version: "3.12.0"
-ludus_litterbox_python_package: "python312"
+ludus_litterbox_python_winget_id: Python.Python.3.12
+ludus_litterbox_python_install_override: "InstallAllUsers=1 PrependPath=1 TargetDir=C:\\Python312 /quiet"
 ludus_litterbox_python_executable: "C:\\Python312\\python.exe"
 ludus_litterbox_install_python: true
+ludus_litterbox_git_winget_id: Git.Git
+ludus_litterbox_winget_ok_rc:
+  - 0
+  - -1978335135
+  - -1978334963
+  - -1978335189
+  - 2316632161
+  - 2316632333
+  - 2316632107
+ludus_litterbox_winget_build_packages:
+  - id: Microsoft.VCRedist.2015+.x64
+  - id: Microsoft.DotNet.Framework.DeveloperPack_4
+  - id: Microsoft.VisualStudio.2022.BuildTools
+    override: "--wait --passive --add Microsoft.VisualStudio.Workload.VCTools --includeRecommended"
+  - id: Microsoft.WindowsSDK.10.0.22621
 ludus_litterbox_app_dir: "{{ ludus_litterbox_install_dir }}\\LitterBox"
 ludus_litterbox_tools_dir: "C:\\Tools"
 
@@ -83,9 +99,6 @@ ludus_litterbox_process_monitor_interval: 5
 ludus_litterbox_memory_scan_interval: 10
 ludus_litterbox_cleanup_days: 30
 ludus_litterbox_enable_telemetry: false
-
-# Chocolatey installation
-ludus_litterbox_install_chocolatey: true
 
 ludus_litterbox_disable_defender: false
 

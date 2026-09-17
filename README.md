@@ -30,7 +30,6 @@ LitterBox provides a controlled sandbox environment designed for security profes
 - Required Ansible Collections:
   - `ansible.windows` >= 2.0.0
   - `community.windows` >= 2.0.0
-  - `chocolatey.chocolatey` >= 1.5.0
 
 ### Target VM Requirements
 - **OS**: Windows 10/11, Server 2019/2022 (SERVER 2022 RECOMMENED FOR AV DISABLE)
@@ -38,6 +37,7 @@ LitterBox provides a controlled sandbox environment designed for security profes
 - **Storage**: 10GB free disk space
 - **Privileges**: Administrator access required
 - **Network**: Internet access for initial setup
+- **winget**: App Installer / winget (present on current Ludus Windows 10/11 templates)
 
 ## Installation
 
@@ -107,8 +107,7 @@ ludus_litterbox_enable_doppelganger: true                # Process similarity
 ludus_litterbox_enable_yara: true                        # YARA scanning
 
 # System Settings
-ludus_litterbox_install_chocolatey: true                  # Install Chocolatey
-ludus_litterbox_install_python: true                      # Install Python if missing
+ludus_litterbox_install_python: true                      # Install Python 3.12 via winget
 ludus_litterbox_debug: false                              # Enable debug logging
 ```
 
@@ -258,7 +257,8 @@ ludus range deploy -t "litterbox" --limit "TARGET_VM"
 
 | Issue | Solution |
 |-------|----------|
-| **Python Installation Fails** | Manually install Python 3.11+ from python.org, ensure PATH is set |
+| **Python Installation Fails** | Install `Python.Python.3.12` with winget, or python.org to `C:\Python312` |
+| **winget missing** | Use a Win11 template, or install App Installer so `winget` is on PATH |
 | **Git Clone Errors** | Check internet connectivity, verify proxy settings if applicable |
 | **Port Already in Use** | Change `ludus_litterbox_port` variable or stop conflicting service |
 | **Module Import Errors** | Re-run pip install: `.\venv\Scripts\pip.exe install -r requirements.txt` |
@@ -322,7 +322,7 @@ The role supports the following Ansible tags for selective execution:
 
 - `litterbox` - Complete LitterBox installation
 - `install` - Core installation tasks
-- `chocolatey` - Chocolatey package manager
+- `packages` - winget package installs (Python, Git, VC++ / Build Tools)
 - `python` - Python installation
 - `dependencies` - Required dependencies
 - `tools` - Analysis tools setup

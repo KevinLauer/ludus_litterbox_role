@@ -34,4 +34,3 @@ galaxy_info:
 collections:
   - ansible.windows
   - community.windows
-  - chocolatey.chocolatey

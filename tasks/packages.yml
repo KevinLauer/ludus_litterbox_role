@@ -1,0 +1,127 @@
+---
+- name: Locate winget
+  ansible.windows.win_shell: |
+    $cmd = Get-Command winget -ErrorAction SilentlyContinue
+    if ($cmd) {
+      Write-Output $cmd.Source
+      exit 0
+    }
+    $pkg = Get-AppxPackage -Name Microsoft.DesktopAppInstaller -ErrorAction SilentlyContinue | Select-Object -First 1
+    if ($pkg) {
+      $exe = Join-Path $pkg.InstallLocation "winget.exe"
+      if (Test-Path $exe) {
+        Write-Output $exe
+        exit 0
+      }
+    }
+    $found = Get-ChildItem "$env:ProgramFiles\WindowsApps\Microsoft.DesktopAppInstaller_*_x64_*\winget.exe" -ErrorAction SilentlyContinue | Select-Object -First 1
+    if ($found) {
+      Write-Output $found.FullName
+      exit 0
+    }
+    exit 1
+  register: winget_locate
+  changed_when: false
+  failed_when: false
+  tags:
+    - packages
+    - python
+    - dependencies
+
+- name: Bootstrap winget if missing
+  ansible.windows.win_shell: |
+    $ProgressPreference = "SilentlyContinue"
+    Install-PackageProvider -Name NuGet -Force | Out-Null
+    Install-Module -Name Microsoft.WinGet.Client -Force -Repository PSGallery | Out-Null
+    Repair-WinGetPackageManager -Force -Latest
+  when: winget_locate.rc != 0
+  tags:
+    - packages
+    - python
+    - dependencies
+
+- name: Re-locate winget after bootstrap
+  ansible.windows.win_shell: |
+    $cmd = Get-Command winget -ErrorAction SilentlyContinue
+    if ($cmd) {
+      Write-Output $cmd.Source
+      exit 0
+    }
+    $pkg = Get-AppxPackage -Name Microsoft.DesktopAppInstaller -ErrorAction SilentlyContinue | Select-Object -First 1
+    if ($pkg) {
+      $exe = Join-Path $pkg.InstallLocation "winget.exe"
+      if (Test-Path $exe) {
+        Write-Output $exe
+        exit 0
+      }
+    }
+    exit 1
+  register: winget_locate_retry
+  changed_when: false
+  when: winget_locate.rc != 0
+  tags:
+    - packages
+    - python
+    - dependencies
+
+- name: Set winget path
+  ansible.builtin.set_fact:
+    ludus_litterbox_winget_exe: "{{ (winget_locate.stdout | default('') | trim) if winget_locate.rc == 0 else (winget_locate_retry.stdout | default('') | trim) }}"
+  tags:
+    - packages
+    - python
+    - dependencies
+
+- name: Fail if winget is unavailable
+  ansible.builtin.fail:
+    msg: "winget is not available on this Windows VM. Install App Installer or use Windows 10/11 with winget."
+  when: ludus_litterbox_winget_exe | length == 0
+  tags:
+    - packages
+    - python
+    - dependencies
+
+- name: Install Python with winget
+  ansible.windows.win_shell: |
+    & "{{ ludus_litterbox_winget_exe }}" install --id {{ ludus_litterbox_python_winget_id }} -e --scope machine --source winget --disable-interactivity --accept-package-agreements --accept-source-agreements --override "{{ ludus_litterbox_python_install_override }}"
+    exit $LASTEXITCODE
+  register: winget_python
+  failed_when: winget_python.rc not in ludus_litterbox_winget_ok_rc
+  when: ludus_litterbox_install_python
+  tags:
+    - packages
+    - python
+
+- name: Verify Python installation
+  ansible.windows.win_command: "{{ ludus_litterbox_python_executable }} --version"
+  when: ludus_litterbox_install_python
+  tags:
+    - packages
+    - python
+
+- name: Install Git with winget
+  ansible.windows.win_shell: |
+    & "{{ ludus_litterbox_winget_exe }}" install --id {{ ludus_litterbox_git_winget_id }} -e --scope machine --source winget --disable-interactivity --accept-package-agreements --accept-source-agreements
+    exit $LASTEXITCODE
+  register: winget_git
+  failed_when: winget_git.rc not in ludus_litterbox_winget_ok_rc
+  tags:
+    - packages
+    - dependencies
+
+- name: Install Visual C++ and build dependencies with winget
+  ansible.windows.win_shell: |
+    $id = "{{ item.id }}"
+    $override = "{{ item.override | default('') }}"
+    $args = @("install", "--id", $id, "-e", "--scope", "machine", "--source", "winget", "--disable-interactivity", "--accept-package-agreements", "--accept-source-agreements")
+    if ($override -ne "") {
+      $args += @("--override", $override)
+    }
+    & "{{ ludus_litterbox_winget_exe }}" @args
+    exit $LASTEXITCODE
+  loop: "{{ ludus_litterbox_winget_build_packages }}"
+  register: winget_build_deps
+  failed_when: false
+  tags:
+    - packages
+    - dependencies

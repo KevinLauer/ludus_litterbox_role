@@ -63,40 +63,9 @@
   tags:
     - dependencies
 
-- name: Check if Chocolatey is installed
-  ansible.windows.win_shell: |
-    try {
-      choco --version
-      exit 0
-    } catch {
-      exit 1
-    }
-  register: chocolatey_check
-  ignore_errors: true
-  when: ludus_litterbox_install_chocolatey
-  tags:
-    - chocolatey
-
-- name: Install Chocolatey
-  ansible.windows.win_shell: |
-    powershell -nop -InputFormat None -ep Bypass -Command "iwr https://chocolatey.org/install.ps1 -useb | iex"
-  when:
-    - ludus_litterbox_install_chocolatey
-    - chocolatey_check.rc != 0
-  tags:
-    - chocolatey
-
-- name: Install Python 3.12 on Windows
-  block:
-    - name: Add Choco to PATH
-      ansible.windows.win_shell: SET "PATH=%PATH%;%ALLUSERSPROFILE%\chocolatey\bin"
-    - name: Install Python 3.12 using Choco
-      ansible.windows.win_shell: powershell choco install -y {{ ludus_litterbox_python_package }}
-    - name: Verify Chocolatey installation
-      ansible.windows.win_command: choco --version
-    - name: Verify Python installation
-      ansible.windows.win_command: "{{ ludus_litterbox_python_executable }} --version"
-  when: ludus_litterbox_install_python
+- name: Install packages with winget
+  ansible.builtin.include_tasks: packages.yml
+  when: ludus_litterbox_install or ludus_litterbox_install_python
 
 - name: Install LitterBox
   when: ludus_litterbox_install
@@ -135,40 +104,11 @@
         - defender
         - dangerous
 
-    - name: Check if git is installed
-      ansible.windows.win_shell: |
-        try {
-          git --version
-          exit 0
-        } catch {
-          exit 1
-        }
-      register: git_check
-      ignore_errors: true
-
-    - name: Install Git using Chocolatey
-      ansible.windows.win_shell: |
-        if (-not (Get-Command git -ErrorAction SilentlyContinue)) {
-          choco install git -y --no-progress
-        } else {
-          Write-Output "Git already installed"
-        }
-      when: git_check.rc != 0
-
-    # ADD: Install all required dependencies
-    - name: Install Visual C++ and .NET dependencies
-      ansible.windows.win_shell: |
-        choco install vcredist-all -y --no-progress --ignore-package-exit-codes --force
-        choco install dotnetfx -y --no-progress --ignore-package-exit-codes --force
-        choco install visualstudio2022buildtools -y --no-progress --force
-        choco install visualstudio2022-workload-vctools -y --no-progress --force
-        choco install windows-sdk-10-version-2004-all -y --no-progress --force
-      ignore_errors: true
-      tags:
-        - dependencies
-
     - name: Clone LitterBox repository
       ansible.windows.win_shell: |
+        $machine = [System.Environment]::GetEnvironmentVariable("Path", "Machine")
+        $user = [System.Environment]::GetEnvironmentVariable("Path", "User")
+        $env:Path = "$machine;$user"
         if (Test-Path "{{ ludus_litterbox_install_dir }}\\LitterBox") {
           cd "{{ ludus_litterbox_install_dir }}\\LitterBox"
           git pull
@@ -351,6 +291,9 @@
 
     - name: Download GrumpyCats client library
       ansible.windows.win_shell: |
+        $machine = [System.Environment]::GetEnvironmentVariable("Path", "Machine")
+        $user = [System.Environment]::GetEnvironmentVariable("Path", "User")
+        $env:Path = "$machine;$user"
         cd "{{ ludus_litterbox_install_dir }}\\LitterBox"
         if (Test-Path "GrumpyCats") {
           cd GrumpyCats
